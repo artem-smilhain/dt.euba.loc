@@ -24,7 +24,7 @@
             <div class="col-2"></div>
             <div class="col-8">
                 <?php include 'app/edit.php'?>
-                <form action="app/edit.php?id=<?= $id ?>" method="POST">
+                <form action="app/edit.php?id=<?= $global_id ?>" method="POST">
                     <div class="mb-3">
                         <label for="name" class="form-label">Product Name</label>
                         <input type="text" id="name" name="name" class="form-control" value="<?= htmlspecialchars($product['name']) ?>" required>

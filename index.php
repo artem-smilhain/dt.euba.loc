@@ -61,8 +61,8 @@
                                         <td><?= number_format($product['price'], 2) ?>€ / <?= htmlspecialchars($product['stock_quantity']) ?></td>
                                         <td>
                                             <?php if ($product['device_id'] === $device_id): ?>
-                                                <a href="edit.php?id=<?= $product['id'] ?>" class="btn btn-outline-warning btn-sm">Edit</a>
-                                                <a href="app/delete.php?id=<?= $product['id'] ?>" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete this product?')">Delete</a>
+                                                <a href="edit.php?id=<?= $product['global_id'] ?>" class="btn btn-outline-warning btn-sm">Edit</a>
+                                                <a href="app/delete.php?id=<?= $product['global_id'] ?>" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to delete this product?')">Delete</a>
                                             <?php endif; ?>
                                         </td>
                                     </tr>

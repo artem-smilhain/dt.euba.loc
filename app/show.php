@@ -13,7 +13,8 @@
         // Fetch products with category and device information
         $stmt = $pdo->prepare("
             SELECT 
-                p.id, 
+                p.id,
+                p.global_id,
                 p.name AS product_name, 
                 c.name AS category_name, 
                 c.elem_class AS category_class,
