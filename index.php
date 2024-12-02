@@ -19,7 +19,7 @@
                     <h2>List of products</h2>
                 </div>
                 <div class="col-5 text-end">
-                    <a href="/add.php" class="btn btn-primary">Add product</a>
+                    <a href="add.php" class="btn btn-primary">Add product</a>
                 </div>
                 <div class="col-1"></div>
             </div>
