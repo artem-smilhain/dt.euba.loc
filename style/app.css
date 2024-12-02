@@ -1,0 +1,32 @@
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f8f9fa;
+}
+.navbar {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+.navbar-brand {
+    font-weight: bold;
+    color: #333;
+}
+.navbar-brand:hover {
+    color: #007bff;
+}
+.nav-link {
+    color: #555;
+    transition: color 0.2s;
+}
+.nav-link:hover {
+    color: #007bff;
+}
+.navbar-toggler {
+    border: none;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+th,td{
+    vertical-align: middle;
+}
