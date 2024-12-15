@@ -1,4 +1,5 @@
 <?php
+session_start();
 // Подключаем конфигурацию
 define('ACCESS_ALLOWED', true);
 if (file_exists('config/config.php')) {
@@ -43,6 +44,14 @@ try {
         exit;
     }
 
+    // Проверяем, передан ли global_id
+    if (!isset($_GET['id']) || empty($_GET['id'])) {
+        $_SESSION['message'] = "Product ID is missing.";
+        $_SESSION['message_type'] = "warning";
+        header('Location: ../index.php');
+        exit;
+    }
+
     $global_id = $_GET['id'];
 
     // Получаем текущие данные товара из локальной базы
@@ -51,6 +60,8 @@ try {
     $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$product) {
+        $_SESSION['message'] = "Product not found in the local database.";
+        $_SESSION['message_type'] = "warning";
         header('Location: ../index.php');
         exit;
     }
@@ -88,8 +99,11 @@ try {
                 ':category_id' => $category_id,
                 ':global_id' => $global_id
             ]);
+            $_SESSION['message'] = "Product successfully updated in the local database.";
+            $_SESSION['message_type'] = "success";
         } catch (PDOException $e) {
-            echo "<p class='alert alert-danger'>Error updating local DB: " . $e->getMessage() . "</p>";
+            $_SESSION['message'] = "Error updating product in the local database: " . $e->getMessage();
+            $_SESSION['message_type'] = "danger";
         }
 
         // Обновление удалённой базы данных (если подключение удалось)
@@ -110,6 +124,7 @@ try {
                     ':category_id' => $category_id,
                     ':global_id' => $global_id
                 ]);
+                $_SESSION['message'] .= " Product successfully updated in the remote database.";
             } catch (PDOException $e) {
                 // Логирование запроса, если не удалось обновить данные в удалённой базе
                 $queryText = "
@@ -120,6 +135,8 @@ try {
                 ";
                 logQuery($localPdo, 'edit', $queryText, $global_id);
                 error_log("Failed to update remote DB: " . $e->getMessage());
+                $_SESSION['message'] .= " However, the remote database update failed.";
+                $_SESSION['message_type'] = "warning";
             }
         } else {
             // Логирование запроса, если удалённый сервер недоступен
@@ -130,6 +147,8 @@ try {
                 WHERE global_id = '$global_id'
             ";
             logQuery($localPdo, 'edit', $queryText, $global_id);
+            $_SESSION['message'] .= " Remote server is unavailable. Changes logged for future synchronization.";
+            $_SESSION['message_type'] = "warning";
         }
 
         // Перенаправление после успешного обновления
@@ -137,7 +156,10 @@ try {
         exit;
     }
 } catch (PDOException $e) {
-    die("Error: " . $e->getMessage());
+    $_SESSION['message'] = "An error occurred: " . $e->getMessage();
+    $_SESSION['message_type'] = "danger";
+    header('Location: ../index.php');
+    exit;
 }
 
 // Функция для логирования запросов в таблицу pending_queries

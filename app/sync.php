@@ -9,6 +9,8 @@ if (file_exists('config/config.php')) {
     die('Configuration file not found in both paths.');
 }
 
+session_start(); // Для использования сообщений через сессии
+
 try {
     // Подключение к локальной базе данных
     $localPdo = new PDO(
@@ -51,14 +53,23 @@ try {
             }
         }
 
-        echo "<p>Synchronization completed successfully!</p>";
+        // Успешная синхронизация
+        $_SESSION['message'] = 'Synchronization completed successfully!';
+        $_SESSION['message_type'] = 'success';
+        header('Location: ../index.php'); // Перенаправление на индексную страницу
+        exit;
 
     } catch (PDOException $e) {
+        // Ошибка подключения к удалённому серверу
         error_log("Remote DB connection failed: " . $e->getMessage());
-        echo "<p>Error: Unable to connect to remote database.</p>";
+        $_SESSION['message'] = 'Error: Unable to connect to remote database.';
+        $_SESSION['message_type'] = 'danger';
+        header('Location: ../index.php'); // Перенаправление на индексную страницу
+        exit;
     }
 
 } catch (PDOException $e) {
+    // Ошибка подключения к локальной базе данных
     die("Local DB Error: " . $e->getMessage());
 }
 ?>

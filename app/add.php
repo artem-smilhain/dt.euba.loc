@@ -4,6 +4,8 @@ ini_set('log_errors', 1);
 ini_set('error_log', '../log.txt'); // Устанавливаем файл для записи логов
 ini_set('display_errors', 1); // Включаем отображение ошибок на экран
 
+session_start(); // Для использования уведомлений через сессии
+
 define('ACCESS_ALLOWED', true);
 $config = include '../config/config.php';
 
@@ -56,7 +58,10 @@ try {
     $devices = $devicesStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     error_log("Local DB Error: " . $e->getMessage());
-    die("An error occurred. Check the logs for details.");
+    $_SESSION['message'] = "Local database error: " . $e->getMessage();
+    $_SESSION['message_type'] = "danger";
+    header('Location: ../index.php');
+    exit;
 }
 
 // Обработка отправки формы
@@ -70,14 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Локальный ID устройства
     $local_device_id = $config['local']['device_id'];
-    // Удалённый ID устройства (если используется)
-    $remote_device_id = $config['remote']['device_id'];
 
     // Генерация уникального идентификатора
     $global_id = generateUUID();
 
-    // Подготовка SQL-запроса для локальной базы данных
     try {
+        // Подготовка SQL-запроса для локальной базы данных
         $stmt = $localPdo->prepare("
             INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id)
             VALUES (:global_id, :name, :brand, :weight_or_volume, :price, :stock_quantity, :category_id, :device_id)
@@ -92,8 +95,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':category_id' => $category_id,
             ':device_id' => $local_device_id,
         ]);
+
+        $_SESSION['message'] = "Product added successfully to the local database.";
+        $_SESSION['message_type'] = "success";
+
     } catch (PDOException $e) {
         error_log("Local DB Error (Insert): " . $e->getMessage());
+        $_SESSION['message'] = "Error adding product to the local database: " . $e->getMessage();
+        $_SESSION['message_type'] = "danger";
     }
 
     // Попытка записи в удалённую базу данных (если подключение удалось)
@@ -113,21 +122,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':category_id' => $category_id,
                 ':device_id' => $local_device_id,
             ]);
+
+            $_SESSION['message'] .= " Product also added to the remote database.";
         } catch (PDOException $e) {
-            // Логирование запроса, если не удалось вставить данные в удалённую базу
             $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id)
                           VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
             logQuery($localPdo, 'add', $queryText, $global_id);
             error_log("Remote DB Error (Insert): " . $e->getMessage());
+            $_SESSION['message'] .= " However, the remote database update failed.";
+            $_SESSION['message_type'] = "warning";
         }
     } else {
-        // Логирование запроса, если удалённый сервер недоступен
         $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id)
                       VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
         logQuery($localPdo, 'add', $queryText, $global_id);
+        $_SESSION['message'] .= " Remote server is unavailable. Changes logged for future synchronization.";
+        $_SESSION['message_type'] = "warning";
     }
 
-    // Перенаправление после успешной обработки
+    // Перенаправление после обработки
     header('Location: ../index.php');
     exit;
 }

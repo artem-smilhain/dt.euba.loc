@@ -1,5 +1,7 @@
 <?php
 // Подключаем конфигурацию
+session_start(); // Для использования уведомлений через сессии
+
 define('ACCESS_ALLOWED', true);
 if (file_exists('config/config.php')) {
     $config = include 'config/config.php';
@@ -39,6 +41,8 @@ try {
 
     // Проверяем, передан ли global_id
     if (!isset($_GET['id']) || empty($_GET['id'])) {
+        $_SESSION['message'] = "Product ID is missing.";
+        $_SESSION['message_type'] = "warning";
         header('Location: ../index.php');
         exit;
     }
@@ -51,10 +55,15 @@ try {
         $stmt->execute([':global_id' => $global_id]);
 
         if ($stmt->rowCount() === 0) {
-            echo "<p class='alert alert-warning'>Product not found in the local database.</p>";
+            $_SESSION['message'] = "Product not found in the local database.";
+            $_SESSION['message_type'] = "warning";
+        } else {
+            $_SESSION['message'] = "Product successfully deleted from the local database.";
+            $_SESSION['message_type'] = "success";
         }
     } catch (PDOException $e) {
-        echo "<p class='alert alert-danger'>Error deleting product from local DB: " . $e->getMessage() . "</p>";
+        $_SESSION['message'] = "Error deleting product from local database: " . $e->getMessage();
+        $_SESSION['message_type'] = "danger";
     }
 
     // Удаление из удалённой базы данных (если подключение удалось)
@@ -64,26 +73,35 @@ try {
             $stmt->execute([':global_id' => $global_id]);
 
             if ($stmt->rowCount() === 0) {
-                echo "<p class='alert alert-warning'>Product not found in the remote database.</p>";
+                $_SESSION['message'] .= " Product not found in the remote database.";
+                $_SESSION['message_type'] = "warning";
+            } else {
+                $_SESSION['message'] .= " Product successfully deleted from the remote database.";
             }
         } catch (PDOException $e) {
             // Логирование запроса, если не удалось удалить данные в удалённой базе
             $queryText = "DELETE FROM products WHERE global_id = '$global_id'";
             logQuery($localPdo, 'delete', $queryText, $global_id);
             error_log("Error deleting product from remote DB: " . $e->getMessage());
-            echo "Error deleting product from remote DB: " . $e->getMessage();
+            $_SESSION['message'] .= " However, the remote database update failed.";
+            $_SESSION['message_type'] = "warning";
         }
     } else {
         // Логирование запроса, если удалённый сервер недоступен
         $queryText = "DELETE FROM products WHERE global_id = '$global_id'";
         logQuery($localPdo, 'delete', $queryText, $global_id);
+        $_SESSION['message'] .= " Remote server is unavailable. Changes logged for future synchronization.";
+        $_SESSION['message_type'] = "warning";
     }
 
-    // Перенаправление после успешного удаления
+    // Перенаправление после завершения
     header('Location: ../index.php');
     exit;
 } catch (PDOException $e) {
-    die("Error: " . $e->getMessage());
+    $_SESSION['message'] = "An error occurred: " . $e->getMessage();
+    $_SESSION['message_type'] = "danger";
+    header('Location: ../index.php');
+    exit;
 }
 
 // Функция для логирования запросов в таблицу pending_queries

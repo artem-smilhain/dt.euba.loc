@@ -13,6 +13,20 @@
     </header>
     <main class="pt-5">
         <div class="container">
+            <?php
+            session_start();
+            if (isset($_SESSION['message'])): ?>
+                <div class="row" style="margin-top: -25px;">
+                    <div class="col-1"></div>
+                    <div class="col-10">
+                        <div class="alert alert-<?= $_SESSION['message_type'] ?>">
+                            <?= $_SESSION['message'] ?>
+                        </div>
+                    </div>
+                    <div class="col-1"></div>
+                </div>
+                <?php unset($_SESSION['message'], $_SESSION['message_type']); ?>
+            <?php endif; ?>
             <div class="row pb-2">
                 <div class="col-1"></div>
                 <div class="col-5">
