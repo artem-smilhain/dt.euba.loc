@@ -25,7 +25,10 @@ try {
     $localPdo = new PDO(
         "mysql:host={$config['local']['host']};dbname={$config['local']['dbname']};charset={$config['local']['charset']}",
         $config['local']['username'],
-        $config['local']['password']
+        $config['local']['password'],
+        [
+            PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
+        ]
     );
     $localPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
@@ -34,13 +37,15 @@ try {
         $remotePdo = new PDO(
             "mysql:host={$config['remote']['host']};dbname={$config['remote']['dbname']};charset={$config['remote']['charset']}",
             $config['remote']['username'],
-            $config['remote']['password']
+            $config['remote']['password'],
+            [
+                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
+            ]
         );
         $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } catch (PDOException $e) {
         $remotePdo = null; // Если подключение к удалённой БД не удалось
         error_log("Remote DB connection failed: " . $e->getMessage());
-        echo "Remote DB connection failed: " . $e->getMessage();
     }
 
     // Получение категорий и устройств
@@ -114,7 +119,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                           VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
             logQuery($localPdo, 'add', $queryText, $global_id);
             error_log("Remote DB Error (Insert): " . $e->getMessage());
-            echo "Remote DB Error (Insert): " . $e->getMessage();
         }
     } else {
         // Логирование запроса, если удалённый сервер недоступен

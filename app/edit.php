@@ -14,7 +14,10 @@ try {
     $localPdo = new PDO(
         "mysql:host={$config['local']['host']};dbname={$config['local']['dbname']};charset={$config['local']['charset']}",
         $config['local']['username'],
-        $config['local']['password']
+        $config['local']['password'],
+        [
+            PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
+        ]
     );
     $localPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
@@ -23,7 +26,10 @@ try {
         $remotePdo = new PDO(
             "mysql:host={$config['remote']['host']};dbname={$config['remote']['dbname']};charset={$config['remote']['charset']}",
             $config['remote']['username'],
-            $config['remote']['password']
+            $config['remote']['password'],
+            [
+                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
+            ]
         );
         $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } catch (PDOException $e) {
