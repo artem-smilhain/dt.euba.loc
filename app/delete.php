@@ -54,7 +54,7 @@ try {
     // Удаление из удалённой базы данных (если подключение удалось)
     if ($remotePdo) {
         try {
-            $stmt = $remotePdo->prepare("DELETE FROM products WHERE global_id = :global_id");
+            $stmt = $remotePdo->prepare("DELETE FROM products WHERE global_id = :id");
             $stmt->execute([':global_id' => $global_id]);
 
             if ($stmt->rowCount() === 0) {

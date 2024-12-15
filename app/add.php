@@ -98,7 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':price' => $price,
                 ':stock_quantity' => $stock_quantity,
                 ':category_id' => $category_id,
-                ':device_id' => $remote_device_id,
+                ':device_id' => $local_device_id,
+                //':device_id' => $remote_device_id,
             ]);
         } catch (PDOException $e) {
             // Логируем ошибку, но не показываем пользователю
