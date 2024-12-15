@@ -1,8 +1,8 @@
 <?php
 // Включаем отображение всех ошибок
 ini_set('log_errors', 1);
-ini_set('error_log',  '../log.txt'); // Устанавливаем файл для записи логов
-ini_set('display_errors', 1); // Отключаем вывод ошибок на экран
+ini_set('error_log', '../log.txt'); // Устанавливаем файл для записи логов
+ini_set('display_errors', 1); // Включаем отображение ошибок на экран
 
 define('ACCESS_ALLOWED', true);
 $config = include '../config/config.php';
@@ -19,6 +19,7 @@ function generateUUID(): string {
     );
 }
 
+// Подключение к базам данных
 try {
     // Подключение к локальной базе данных
     $localPdo = new PDO(
@@ -39,6 +40,7 @@ try {
     } catch (PDOException $e) {
         $remotePdo = null; // Если подключение к удалённой БД не удалось
         error_log("Remote DB connection failed: " . $e->getMessage());
+        echo "Remote DB connection failed: " . $e->getMessage();
     }
 
     // Получение категорий и устройств
@@ -107,12 +109,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':device_id' => $local_device_id,
             ]);
         } catch (PDOException $e) {
+            // Логирование запроса, если не удалось вставить данные в удалённую базу
+            $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id)
+                          VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
+            logQuery($localPdo, 'add', $queryText, $global_id);
             error_log("Remote DB Error (Insert): " . $e->getMessage());
+            echo "Remote DB Error (Insert): " . $e->getMessage();
         }
+    } else {
+        // Логирование запроса, если удалённый сервер недоступен
+        $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id)
+                      VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
+        logQuery($localPdo, 'add', $queryText, $global_id);
     }
 
     // Перенаправление после успешной обработки
     header('Location: ../index.php');
     exit;
+}
+
+// Функция для логирования запросов в таблицу pending_queries
+function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId): void {
+    try {
+        $stmt = $localPdo->prepare("
+            INSERT INTO pending_queries (query_type, query_text, global_id)
+            VALUES (:query_type, :query_text, :global_id)
+        ");
+        $stmt->execute([
+            ':query_type' => $queryType,
+            ':query_text' => $queryText,
+            ':global_id' => $globalId
+        ]);
+    } catch (PDOException $e) {
+        error_log("Failed to log query: " . $e->getMessage());
+    }
 }
 ?>

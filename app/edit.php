@@ -105,8 +105,25 @@ try {
                     ':global_id' => $global_id
                 ]);
             } catch (PDOException $e) {
+                // Логирование запроса, если не удалось обновить данные в удалённой базе
+                $queryText = "
+                    UPDATE products
+                    SET name = '$name', brand = '$brand', weight_or_volume = '$weight_or_volume', price = $price,
+                        stock_quantity = $stock_quantity, category_id = $category_id
+                    WHERE global_id = '$global_id'
+                ";
+                logQuery($localPdo, 'edit', $queryText, $global_id);
                 error_log("Failed to update remote DB: " . $e->getMessage());
             }
+        } else {
+            // Логирование запроса, если удалённый сервер недоступен
+            $queryText = "
+                UPDATE products
+                SET name = '$name', brand = '$brand', weight_or_volume = '$weight_or_volume', price = $price,
+                    stock_quantity = $stock_quantity, category_id = $category_id
+                WHERE global_id = '$global_id'
+            ";
+            logQuery($localPdo, 'edit', $queryText, $global_id);
         }
 
         // Перенаправление после успешного обновления
@@ -116,3 +133,21 @@ try {
 } catch (PDOException $e) {
     die("Error: " . $e->getMessage());
 }
+
+// Функция для логирования запросов в таблицу pending_queries
+function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId): void {
+    try {
+        $stmt = $localPdo->prepare("
+            INSERT INTO pending_queries (query_type, query_text, global_id)
+            VALUES (:query_type, :query_text, :global_id)
+        ");
+        $stmt->execute([
+            ':query_type' => $queryType,
+            ':query_text' => $queryText,
+            ':global_id' => $globalId
+        ]);
+    } catch (PDOException $e) {
+        error_log("Failed to log query: " . $e->getMessage());
+    }
+}
+?>

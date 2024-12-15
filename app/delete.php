@@ -61,9 +61,16 @@ try {
                 echo "<p class='alert alert-warning'>Product not found in the remote database.</p>";
             }
         } catch (PDOException $e) {
+            // Логирование запроса, если не удалось удалить данные в удалённой базе
+            $queryText = "DELETE FROM products WHERE global_id = '$global_id'";
+            logQuery($localPdo, 'delete', $queryText, $global_id);
             error_log("Error deleting product from remote DB: " . $e->getMessage());
             echo "Error deleting product from remote DB: " . $e->getMessage();
         }
+    } else {
+        // Логирование запроса, если удалённый сервер недоступен
+        $queryText = "DELETE FROM products WHERE global_id = '$global_id'";
+        logQuery($localPdo, 'delete', $queryText, $global_id);
     }
 
     // Перенаправление после успешного удаления
@@ -72,3 +79,21 @@ try {
 } catch (PDOException $e) {
     die("Error: " . $e->getMessage());
 }
+
+// Функция для логирования запросов в таблицу pending_queries
+function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId): void {
+    try {
+        $stmt = $localPdo->prepare("
+            INSERT INTO pending_queries (query_type, query_text, global_id)
+            VALUES (:query_type, :query_text, :global_id)
+        ");
+        $stmt->execute([
+            ':query_type' => $queryType,
+            ':query_text' => $queryText,
+            ':global_id' => $globalId
+        ]);
+    } catch (PDOException $e) {
+        error_log("Failed to log query: " . $e->getMessage());
+    }
+}
+?>
