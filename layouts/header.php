@@ -12,7 +12,7 @@
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav ms-auto">
                 <li class="nav-item">
-                    <a class="nav-link" href="#">Synchronization</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="/app/sync.php">Synchronization</a>
                 </li>
             </ul>
         </div>
