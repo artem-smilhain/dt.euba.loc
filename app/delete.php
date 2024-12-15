@@ -67,7 +67,7 @@ try {
     }
 
     // Перенаправление после успешного удаления
-    //header('Location: ../index.php');
+    header('Location: ../index.php');
     exit;
 } catch (PDOException $e) {
     die("Error: " . $e->getMessage());
