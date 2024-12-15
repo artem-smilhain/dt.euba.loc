@@ -1,8 +1,8 @@
 <?php
 // Включаем отображение всех ошибок
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+ini_set('log_errors', 1);
+ini_set('error_log',  '../log.txt'); // Устанавливаем файл для записи логов
+ini_set('display_errors', 1); // Отключаем вывод ошибок на экран
 
 define('ACCESS_ALLOWED', true);
 $config = include '../config/config.php';
@@ -38,7 +38,7 @@ try {
         $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } catch (PDOException $e) {
         $remotePdo = null; // Если подключение к удалённой БД не удалось
-        echo "<p class='alert alert-danger'>Remote DB connection failed: " . $e->getMessage() . "</p>";
+        error_log("Remote DB connection failed: " . $e->getMessage());
     }
 
     // Получение категорий и устройств
@@ -48,7 +48,8 @@ try {
     $devicesStmt = $localPdo->query("SELECT id, name FROM devices");
     $devices = $devicesStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    die("Error: " . $e->getMessage());
+    error_log("Local DB Error: " . $e->getMessage());
+    die("An error occurred. Check the logs for details.");
 }
 
 // Обработка отправки формы
@@ -85,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':device_id' => $local_device_id,
         ]);
     } catch (PDOException $e) {
-        echo "<p class='alert alert-danger'>Local DB Error: " . $e->getMessage() . "</p>";
+        error_log("Local DB Error (Insert): " . $e->getMessage());
     }
 
     // Попытка записи в удалённую базу данных (если подключение удалось)
@@ -104,10 +105,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':stock_quantity' => $stock_quantity,
                 ':category_id' => $category_id,
                 ':device_id' => $local_device_id,
-                // ':device_id' => $remote_device_id,
             ]);
         } catch (PDOException $e) {
-            echo "<p class='alert alert-danger'>Remote DB Error: " . $e->getMessage() . "</p>";
+            error_log("Remote DB Error (Insert): " . $e->getMessage());
         }
     }
 
