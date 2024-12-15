@@ -54,7 +54,7 @@ try {
     // Удаление из удалённой базы данных (если подключение удалось)
     if ($remotePdo) {
         try {
-            $stmt = $remotePdo->prepare("DELETE FROM products WHERE global_id = :id");
+            $stmt = $remotePdo->prepare("DELETE FROM products WHERE global_id = :global_id");
             $stmt->execute([':global_id' => $global_id]);
 
             if ($stmt->rowCount() === 0) {
@@ -62,11 +62,12 @@ try {
             }
         } catch (PDOException $e) {
             error_log("Error deleting product from remote DB: " . $e->getMessage());
+            echo "Error deleting product from remote DB: " . $e->getMessage();
         }
     }
 
     // Перенаправление после успешного удаления
-    header('Location: ../index.php');
+    //header('Location: ../index.php');
     exit;
 } catch (PDOException $e) {
     die("Error: " . $e->getMessage());
