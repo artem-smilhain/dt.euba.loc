@@ -1,4 +1,9 @@
 <?php
+// Включаем отображение всех ошибок
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 define('ACCESS_ALLOWED', true);
 $config = include '../config/config.php';
 
@@ -33,7 +38,7 @@ try {
         $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } catch (PDOException $e) {
         $remotePdo = null; // Если подключение к удалённой БД не удалось
-        error_log("Remote DB connection failed: " . $e->getMessage());
+        echo "<p class='alert alert-danger'>Remote DB connection failed: " . $e->getMessage() . "</p>";
     }
 
     // Получение категорий и устройств
@@ -80,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':device_id' => $local_device_id,
         ]);
     } catch (PDOException $e) {
-        echo "<p class='alert alert-danger'>Error: " . $e->getMessage() . "</p>";
+        echo "<p class='alert alert-danger'>Local DB Error: " . $e->getMessage() . "</p>";
     }
 
     // Попытка записи в удалённую базу данных (если подключение удалось)
@@ -99,11 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':stock_quantity' => $stock_quantity,
                 ':category_id' => $category_id,
                 ':device_id' => $local_device_id,
-                //':device_id' => $remote_device_id,
+                // ':device_id' => $remote_device_id,
             ]);
         } catch (PDOException $e) {
-            // Логируем ошибку, но не показываем пользователю
-            error_log("Failed to insert into remote DB: " . $e->getMessage());
+            echo "<p class='alert alert-danger'>Remote DB Error: " . $e->getMessage() . "</p>";
         }
     }
 
@@ -111,3 +115,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Location: ../index.php');
     exit;
 }
+?>
