@@ -34,37 +34,11 @@ try {
     );
     $localPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Подключение к удалённым базам данных
-    $remotePdo = null;
-    $remote2Pdo = null;
+    // Подключение к удалённой базе данных remote
+    $remotePdo = connectRemote($config['remote']);
 
-    try {
-        $remotePdo = new PDO(
-            "mysql:host={$config['remote']['host']};dbname={$config['remote']['dbname']};charset={$config['remote']['charset']}",
-            $config['remote']['username'],
-            $config['remote']['password'],
-            [
-                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-            ]
-        );
-        $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    } catch (PDOException $e) {
-        error_log("Remote DB connection failed: " . $e->getMessage());
-    }
-
-    try {
-        $remote2Pdo = new PDO(
-            "mysql:host={$config['remote_2']['host']};dbname={$config['remote_2']['dbname']};charset={$config['remote_2']['charset']}",
-            $config['remote_2']['username'],
-            $config['remote_2']['password'],
-            [
-                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-            ]
-        );
-        $remote2Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    } catch (PDOException $e) {
-        error_log("Remote_2 DB connection failed: " . $e->getMessage());
-    }
+    // Подключение к удалённой базе данных remote_2
+    $remote2Pdo = connectRemote($config['remote_2']);
 
     // Получение категорий и устройств
     $categoriesStmt = $localPdo->query("SELECT id, name FROM categories");
@@ -78,6 +52,24 @@ try {
     $_SESSION['message_type'] = "danger";
     header('Location: ../index.php');
     exit;
+}
+
+function connectRemote(array $config): ?PDO {
+    try {
+        $pdo = new PDO(
+            "mysql:host={$config['host']};dbname={$config['dbname']};charset={$config['charset']}",
+            $config['username'],
+            $config['password'],
+            [
+                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
+            ]
+        );
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        return $pdo;
+    } catch (PDOException $e) {
+        error_log("Remote DB connection failed: " . $e->getMessage());
+        return null;
+    }
 }
 
 // Обработка отправки формы
@@ -111,18 +103,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $_SESSION['message'] = "Product added successfully to the local database.";
         $_SESSION['message_type'] = "success";
+
     } catch (PDOException $e) {
         error_log("Local DB Error (Insert): " . $e->getMessage());
         $_SESSION['message'] = "Error adding product to the local database: " . $e->getMessage();
         $_SESSION['message_type'] = "danger";
     }
 
-    // Функция для вставки в удалённые базы данных
-    function insertIntoRemote($pdo, $queryText, $global_id, $name, $brand, $weight_or_volume, $price, $stock_quantity, $category_id, $device_id, $logFallback = false, $targetDeviceId = '') {
-        global $localPdo;
+    // Попытка записи в удалённые базы данных
+    foreach (['remote' => $remotePdo, 'remote_2' => $remote2Pdo] as $device => $pdo) {
+        $device_id = $config[$device]['device_id'];
         if ($pdo) {
             try {
-                $stmt = $pdo->prepare($queryText);
+                $stmt = $pdo->prepare("INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id) VALUES (:global_id, :name, :brand, :weight_or_volume, :price, :stock_quantity, :category_id, :device_id)");
                 $stmt->execute([
                     ':global_id' => $global_id,
                     ':name' => $name,
@@ -131,33 +124,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':price' => $price,
                     ':stock_quantity' => $stock_quantity,
                     ':category_id' => $category_id,
-                    ':device_id' => $device_id,
+                    ':device_id' => $local_device_id,
                 ]);
-                $_SESSION['message'] .= " Product also added to the remote database.";
+                $_SESSION['message'] .= " Product also added to the $device database.";
             } catch (PDOException $e) {
-                if ($logFallback) {
-                    logQuery($localPdo, 'add', $queryText, $global_id, $targetDeviceId);
-                }
-                error_log("Remote DB Error (Insert): " . $e->getMessage());
-                $_SESSION['message'] .= " Remote database update failed.";
+                $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id) VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
+                logQuery($localPdo, 'add', $queryText, $global_id, $device_id, 'failed');
+                error_log("$device DB Error (Insert): " . $e->getMessage());
+                $_SESSION['message'] .= " However, the $device database update failed.";
                 $_SESSION['message_type'] = "warning";
             }
         } else {
-            if ($logFallback) {
-                logQuery($localPdo, 'add', $queryText, $global_id, $targetDeviceId);
-            }
-            $_SESSION['message'] .= " Remote server is unavailable. Changes logged for future synchronization.";
+            $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id) VALUES ('$global_id', '$name', '$brand', '$weight_or_volume', $price, $stock_quantity, $category_id, $local_device_id)";
+            logQuery($localPdo, 'add', $queryText, $global_id, $device_id, 'pending');
+            $_SESSION['message'] .= " $device server is unavailable. Changes logged for future synchronization.";
             $_SESSION['message_type'] = "warning";
         }
     }
-
-    $queryText = "INSERT INTO products (global_id, name, brand, weight_or_volume, price, stock_quantity, category_id, device_id) VALUES (:global_id, :name, :brand, :weight_or_volume, :price, :stock_quantity, :category_id, :device_id)";
-
-    // Попытка записи в удалённую базу данных (remote)
-    insertIntoRemote($remotePdo, $queryText, $global_id, $name, $brand, $weight_or_volume, $price, $stock_quantity, $category_id, $local_device_id, true, $config['remote']['device_id']);
-
-    // Попытка записи в удалённую базу данных (remote_2)
-    insertIntoRemote($remote2Pdo, $queryText, $global_id, $name, $brand, $weight_or_volume, $price, $stock_quantity, $category_id, $local_device_id, true, $config['remote_2']['device_id']);
 
     // Перенаправление после обработки
     header('Location: ../index.php');
@@ -165,14 +148,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Функция для логирования запросов в таблицу pending_queries
-function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId, string $deviceId): void {
+function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId, int $deviceId, string $status): void {
     try {
-        $stmt = $localPdo->prepare("INSERT INTO pending_queries (query_type, query_text, global_id, device_id) VALUES (:query_type, :query_text, :global_id, :device_id)");
+        $stmt = $localPdo->prepare("INSERT INTO pending_queries (query_type, query_text, global_id, device_id, status) VALUES (:query_type, :query_text, :global_id, :device_id, :status)");
         $stmt->execute([
             ':query_type' => $queryType,
             ':query_text' => $queryText,
             ':global_id' => $globalId,
-            ':device_id' => $deviceId
+            ':device_id' => $deviceId,
+            ':status' => $status
         ]);
     } catch (PDOException $e) {
         error_log("Failed to log query: " . $e->getMessage());

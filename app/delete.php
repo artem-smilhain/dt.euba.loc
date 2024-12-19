@@ -9,18 +9,6 @@ session_start(); // Для использования уведомлений ч�
 define('ACCESS_ALLOWED', true);
 $config = include '../config/config.php';
 
-// Функция для генерации UUID
-function generateUUID(): string {
-    return sprintf(
-        '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-        mt_rand(0, 0xffff), mt_rand(0, 0xffff),
-        mt_rand(0, 0xffff),
-        mt_rand(0, 0x0fff) | 0x4000,
-        mt_rand(0, 0x3fff) | 0x8000,
-        mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
-    );
-}
-
 // Подключение к базам данных
 try {
     // Подключение к локальной базе данных
@@ -35,36 +23,8 @@ try {
     $localPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Подключение к удалённым базам данных
-    $remotePdo = null;
-    $remote2Pdo = null;
-
-    try {
-        $remotePdo = new PDO(
-            "mysql:host={$config['remote']['host']};dbname={$config['remote']['dbname']};charset={$config['remote']['charset']}",
-            $config['remote']['username'],
-            $config['remote']['password'],
-            [
-                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-            ]
-        );
-        $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    } catch (PDOException $e) {
-        error_log("Remote DB connection failed: " . $e->getMessage());
-    }
-
-    try {
-        $remote2Pdo = new PDO(
-            "mysql:host={$config['remote_2']['host']};dbname={$config['remote_2']['dbname']};charset={$config['remote_2']['charset']}",
-            $config['remote_2']['username'],
-            $config['remote_2']['password'],
-            [
-                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-            ]
-        );
-        $remote2Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    } catch (PDOException $e) {
-        error_log("Remote_2 DB connection failed: " . $e->getMessage());
-    }
+    $remotePdo = connectRemote($config['remote']);
+    $remote2Pdo = connectRemote($config['remote_2']);
 
     // Проверяем, передан ли global_id
     if (!isset($_GET['id']) || empty($_GET['id'])) {
@@ -93,44 +53,35 @@ try {
         $_SESSION['message_type'] = "danger";
     }
 
-    // Функция для удаления из удалённых баз данных
-    function deleteFromRemote($pdo, $queryText, $global_id, $logFallback = false, $targetDeviceId = '') {
-        global $localPdo;
+    // Попытка удаления из удалённых баз данных
+    foreach (['remote' => $remotePdo, 'remote_2' => $remote2Pdo] as $device => $pdo) {
+        $device_id = $config[$device]['device_id'];
         if ($pdo) {
             try {
-                $stmt = $pdo->prepare($queryText);
+                $stmt = $pdo->prepare("DELETE FROM products WHERE global_id = :global_id");
                 $stmt->execute([':global_id' => $global_id]);
 
                 if ($stmt->rowCount() === 0) {
-                    $_SESSION['message'] .= " Product not found in the remote database.";
+                    $_SESSION['message'] .= " Product not found in the $device database.";
                     $_SESSION['message_type'] = "warning";
                 } else {
-                    $_SESSION['message'] .= " Product successfully deleted from the remote database.";
+                    $_SESSION['message'] .= " Product successfully deleted from the $device database.";
                 }
             } catch (PDOException $e) {
-                if ($logFallback) {
-                    logQuery($localPdo, 'delete', $queryText, $global_id, $targetDeviceId);
-                }
-                error_log("Error deleting product from remote DB: " . $e->getMessage());
-                $_SESSION['message'] .= " However, the remote database update failed.";
+                $queryText = "DELETE FROM products WHERE global_id = '$global_id'";
+                logQuery($localPdo, 'delete', $queryText, $global_id, $device_id, 'failed');
+                echo "Error deleting product from $device DB: " . $e->getMessage();
+                $_SESSION['message'] .= " However, the $device database update failed.";
                 $_SESSION['message_type'] = "warning";
             }
         } else {
-            if ($logFallback) {
-                logQuery($localPdo, 'delete', $queryText, $global_id, $targetDeviceId);
-            }
-            $_SESSION['message'] .= " Remote server is unavailable. Changes logged for future synchronization.";
+            $queryText = "DELETE FROM products WHERE global_id = '$global_id'";
+            logQuery($localPdo, 'delete', $queryText, $global_id, $device_id, 'pending');
+            echo "$device server is unavailable. Changes logged for future synchronization.";
+            $_SESSION['message'] .= " $device server is unavailable. Changes logged for future synchronization.";
             $_SESSION['message_type'] = "warning";
         }
     }
-
-    $queryText = "DELETE FROM products WHERE global_id = :global_id";
-
-    // Удаление из удалённой базы данных (remote)
-    deleteFromRemote($remotePdo, $queryText, $global_id, true, $config['remote']['device_id']);
-
-    // Удаление из удалённой базы данных (remote_2)
-    deleteFromRemote($remote2Pdo, $queryText, $global_id, true, $config['remote_2']['device_id']);
 
     // Перенаправление после завершения
     header('Location: ../index.php');
@@ -142,17 +93,37 @@ try {
     exit;
 }
 
-// Функция для логирования запросов в таблицу pending_queries
-function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId, string $deviceId): void {
+// Функция для подключения к удалённым базам данных
+function connectRemote(array $config): ?PDO {
     try {
-        $stmt = $localPdo->prepare("INSERT INTO pending_queries (query_type, query_text, global_id, device_id) VALUES (:query_type, :query_text, :global_id, :device_id)");
+        $pdo = new PDO(
+            "mysql:host={$config['host']};dbname={$config['dbname']};charset={$config['charset']}",
+            $config['username'],
+            $config['password'],
+            [
+                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
+            ]
+        );
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        return $pdo;
+    } catch (PDOException $e) {
+        echo "Remote DB connection failed: " . $e->getMessage();
+        return null;
+    }
+}
+
+// Функция для логирования запросов в таблицу pending_queries
+function logQuery(PDO $localPdo, string $queryType, string $queryText, string $globalId, int $deviceId, string $status): void {
+    try {
+        $stmt = $localPdo->prepare("INSERT INTO pending_queries (query_type, query_text, global_id, device_id, status) VALUES (:query_type, :query_text, :global_id, :device_id, :status)");
         $stmt->execute([
             ':query_type' => $queryType,
             ':query_text' => $queryText,
             ':global_id' => $globalId,
-            ':device_id' => $deviceId
+            ':device_id' => $deviceId,
+            ':status' => $status
         ]);
     } catch (PDOException $e) {
-        error_log("Failed to log query: " . $e->getMessage());
+        echo "Failed to log query: " . $e->getMessage();
     }
 }

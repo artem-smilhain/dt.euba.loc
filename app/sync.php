@@ -1,110 +1,83 @@
 <?php
-// Включаем отображение всех ошибок
-ini_set('log_errors', 1);
-ini_set('error_log', '../log.txt'); // Устанавливаем файл для записи логов
-ini_set('display_errors', 1); // Включаем отображение ошибок на экран
+session_start();
 
-session_start(); // Для использования уведомлений через сессии
-
+// Подключаем конфигурацию
 define('ACCESS_ALLOWED', true);
-$config = include '../config/config.php';
-
-// Функция для генерации UUID
-function generateUUID(): string {
-    return sprintf(
-        '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-        mt_rand(0, 0xffff), mt_rand(0, 0xffff),
-        mt_rand(0, 0xffff),
-        mt_rand(0, 0x0fff) | 0x4000,
-        mt_rand(0, 0x3fff) | 0x8000,
-        mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
-    );
+if (file_exists('config/config.php')) {
+    $config = include 'config/config.php';
+} elseif (file_exists('../config/config.php')) {
+    $config = include '../config/config.php';
+} else {
+    die('Configuration file not found in both paths.');
 }
 
-// Подключение к базам данных
 try {
     // Подключение к локальной базе данных
     $localPdo = new PDO(
         "mysql:host={$config['local']['host']};dbname={$config['local']['dbname']};charset={$config['local']['charset']}",
         $config['local']['username'],
         $config['local']['password'],
-        [
-            PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-        ]
+        [PDO::ATTR_TIMEOUT => 5]
     );
     $localPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Подключение к удалённым базам данных
-    $remotePdo = null;
-    $remote2Pdo = null;
-
-    try {
-        $remotePdo = new PDO(
-            "mysql:host={$config['remote']['host']};dbname={$config['remote']['dbname']};charset={$config['remote']['charset']}",
-            $config['remote']['username'],
-            $config['remote']['password'],
-            [
-                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-            ]
-        );
-        $remotePdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    } catch (PDOException $e) {
-        error_log("Remote DB connection failed: " . $e->getMessage());
-    }
-
-    try {
-        $remote2Pdo = new PDO(
-            "mysql:host={$config['remote_2']['host']};dbname={$config['remote_2']['dbname']};charset={$config['remote_2']['charset']}",
-            $config['remote_2']['username'],
-            $config['remote_2']['password'],
-            [
-                PDO::ATTR_TIMEOUT => 5, // Таймаут подключения (5 секунд)
-            ]
-        );
-        $remote2Pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    } catch (PDOException $e) {
-        error_log("Remote_2 DB connection failed: " . $e->getMessage());
-    }
-
-    // Выполнение запросов для синхронизации
     $localDeviceId = $config['local']['device_id'];
-    $pendingQueriesStmt = $localPdo->prepare("SELECT * FROM pending_queries WHERE device_id = :device_id");
-    $pendingQueriesStmt->execute([':device_id' => $localDeviceId]);
-    $pendingQueries = $pendingQueriesStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($pendingQueries as $query) {
-        try {
-            // Выполняем запрос на устройстве
-            $targetPdo = null;
-            if ($query['device_id'] === $config['remote']['device_id']) {
-                $targetPdo = $remotePdo;
-            } elseif ($query['device_id'] === $config['remote_2']['device_id']) {
-                $targetPdo = $remote2Pdo;
+    // Подключение к удалённым базам данных
+    $remoteConnections = [];
+    foreach (['remote', 'remote_2'] as $remoteKey) {
+        if (!empty($config[$remoteKey]['host'])) {
+            try {
+                $pdo = new PDO(
+                    "mysql:host={$config[$remoteKey]['host']};dbname={$config[$remoteKey]['dbname']};charset={$config[$remoteKey]['charset']}",
+                    $config[$remoteKey]['username'],
+                    $config[$remoteKey]['password'],
+                    [PDO::ATTR_TIMEOUT => 5]
+                );
+                $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                $remoteConnections[] = ['pdo' => $pdo, 'device_id' => $config[$remoteKey]['device_id']];
+            } catch (PDOException $e) {
+                echo "Failed to connect to remote DB ({$remoteKey}): " . $e->getMessage();
             }
-
-            if ($targetPdo) {
-                $targetPdo->exec($query['query_text']);
-
-                // Удаляем выполненный запрос
-                $deleteStmt = $localPdo->prepare("DELETE FROM pending_queries WHERE id = :id");
-                $deleteStmt->execute([':id' => $query['id']]);
-                $_SESSION['message'] .= " Query successfully synchronized for device ID {$query['device_id']}.";
-            } else {
-                $_SESSION['message'] .= " Target PDO not available for device ID {$query['device_id']}";
-            }
-        } catch (PDOException $e) {
-            error_log("Failed to execute query for device ID {$query['device_id']}: " . $e->getMessage());
         }
     }
 
-    // Перенаправление после синхронизации
-    $_SESSION['message_type'] = "success";
-    header('Location: ../index.php');
-    exit;
+    // Выполнение SQL запросов для локального устройства
+    foreach ($remoteConnections as $connection) {
+        $remotePdo = $connection['pdo'];
+        $remoteDeviceId = $connection['device_id'];
 
+        // Получение записей для текущего устройства
+        $stmt = $remotePdo->prepare("SELECT id, query_text, global_id FROM pending_queries WHERE device_id = :device_id AND status = 'pending'");
+        $stmt->execute([':device_id' => $localDeviceId]);
+        $queries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($queries as $query) {
+            try {
+                // Подготовка запроса для локальной базы данных
+                $preparedStmt = $localPdo->prepare($query['query_text']);
+
+                // Получение параметров (если они есть) для запроса
+                $params = json_decode($query['global_id'], true) ?? [];
+                $preparedStmt->execute($params);
+
+                // Обновление статуса на удалённой базе данных
+                $updateStmt = $remotePdo->prepare("UPDATE pending_queries SET status = 'completed' WHERE id = :id");
+                $updateStmt->execute([':id' => $query['id']]);
+
+                // Логирование успешного выполнения
+                echo "Query ID {$query['id']} executed successfully for device ID $localDeviceId.";
+            } catch (PDOException $e) {
+                echo "Failed to execute query ID {$query['id']} on local DB: " . $e->getMessage();
+            }
+        }
+    }
+
+    $_SESSION['message'] = "SQL queries for device ID $localDeviceId executed successfully.";
+    $_SESSION['message_type'] = "success";
+    //header('Location: ../index.php');
 } catch (PDOException $e) {
     $_SESSION['message'] = "An error occurred: " . $e->getMessage();
     $_SESSION['message_type'] = "danger";
-    header('Location: ../index.php');
-    exit;
+    //header('Location: ../index.php');
 }
